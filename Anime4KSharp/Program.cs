@@ -1,6 +1,10 @@
-﻿using System;
-using System.Drawing;
-using System.Drawing.Imaging;
+﻿using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Processing.Processors.Transforms;
+using System;
+using System.IO;
 
 namespace Anime4KSharp
 {
@@ -17,8 +21,9 @@ namespace Anime4KSharp
             string inputFile = args[0];
             string outputFile = args[1];
 
-            Bitmap img = new Bitmap(inputFile);
-            img = copyType(img);
+            Image<Rgba32> image;
+            using (Stream s = File.OpenRead(inputFile))
+                image = Image.Load<Rgba32>(s);
 
             float scale = 2f;
 
@@ -40,57 +45,51 @@ namespace Anime4KSharp
                 pushGradStrength = float.Parse(args[3]);
             }
 
-            img = upscale(img, (int)(img.Width * scale), (int)(img.Height * scale));
-            //img.Save("Bicubic.png", ImageFormat.Png);
+            upscale(image, (int)(image.Width * scale), (int)(image.Height * scale));
+            //Save(image, "Bicubic.png");
 
             DateTime begin = DateTime.UtcNow;
             // Push twice to get sharper lines.
             for (int i = 0; i < 2; i++)
             {
                 // Compute Luminance and store it to alpha channel.
-                img = ImageProcess.ComputeLuminance(img);
-                //img.Save("Luminance.png", ImageFormat.Png);
+                ImageProcess.ComputeLuminance(image);
+                //Save(image, "Luminance.png");
 
+                Image<Rgba32> img2;
                 // Push (Notice that the alpha channel is pushed with rgb channels).
-                Bitmap img2 = ImageProcess.PushColor(img, clamp((int)(pushStrength * 255), 0, 0xFFFF));
-                //img2.Save("Push.png", ImageFormat.Png);
-                img.Dispose();
-                img = img2;
+                using (image)
+                    img2 = ImageProcess.PushColor(image, clamp((int)(pushStrength * 255), 0, 0xFFFF));
+                //Save(img2, "Push.png");
+                image = img2;
 
                 // Compute Gradient of Luminance and store it to alpha channel.
-                img2 = ImageProcess.ComputeGradient(img);
-                //img2.Save("Grad.png", ImageFormat.Png);
-                img.Dispose();
-                img = img2;
+                using (image)
+                    img2 = ImageProcess.ComputeGradient(image);
+                //Save(img2, "Grad.png");
+                image = img2;
 
                 // Push Gradient
-                img2 = ImageProcess.PushGradient(img, clamp((int)(pushGradStrength * 255), 0, 0xFFFF));
-                img.Dispose();
-                img = img2;
+                using (image)
+                    img2 = ImageProcess.PushGradient(image, clamp((int)(pushGradStrength * 255), 0, 0xFFFF));
+                //Save(img2, "PushGrad.png");
+                image = img2;
             }
             TimeSpan span = DateTime.UtcNow - begin;
             Console.WriteLine(span.TotalMilliseconds);
-            img.Save(outputFile, ImageFormat.Png);
+            Save(image, outputFile);
         }
 
-        static Bitmap copyType(Bitmap bm)
+        static void Save(Image<Rgba32> image, string file)
         {
-            Rectangle rect = new Rectangle(0, 0, bm.Width, bm.Height);
-            Bitmap clone = bm.Clone(rect, PixelFormat.Format32bppArgb);
-
-            return clone;
+            using (Image<Rgb24> outImage = image.CloneAs<Rgb24>())
+            using (Stream s = File.Create(file))
+                outImage.SaveAsPng(s);
         }
 
-        static Bitmap upscale(Bitmap bm, int width, int height)
+        static void upscale(Image<Rgba32> bm, int width, int height, bool compand = false)
         {
-            // Upscale image with Bicubic interpolation.
-            Bitmap newImage = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
-            Graphics g = Graphics.FromImage(newImage);
-            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-            g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
-            g.DrawImage(bm, 0, 0, width, height);
-            bm.Dispose();
-            return newImage;
+            bm.Mutate(c => c.Resize(width, height, new BicubicResampler(), compand));
         }
 
         private static int clamp(int i, int min, int max)
