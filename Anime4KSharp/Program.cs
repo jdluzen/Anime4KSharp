@@ -1,5 +1,6 @@
 ﻿using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Processing.Processors.Transforms;
@@ -82,9 +83,8 @@ namespace Anime4KSharp
 
         static void Save(Image<Rgba32> image, string file)
         {
-            using (Image<Rgb24> outImage = image.CloneAs<Rgb24>())
             using (Stream s = File.Create(file))
-                outImage.SaveAsPng(s);
+                image.Save(s, new PngEncoder { ColorType = PngColorType.Rgb });
         }
 
         static void upscale(Image<Rgba32> bm, int width, int height, bool compand = false)

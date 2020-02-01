@@ -1,6 +1,5 @@
 ﻿using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Advanced;
-using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -35,15 +34,15 @@ namespace Anime4KSharp
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static Color GetPixel(Image<Color> image, int x, int y)
+        private static Color GetPixel(Span<Color> row, int x)
         {
-            return image.GetPixelRowSpan(y)[x];
+            return row[x];
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void SetPixel(Image<Color> image, int x, int y, Color c)
+        private static void SetPixel(Span<Color> row, int x, Color c)
         {
-            image.GetPixelRowSpan(y)[x] = c;
+            row[x] = c;
         }
 
         public static Image<Color> PushColor(Image<Color> oldBitmap, int strength)
@@ -56,13 +55,17 @@ namespace Anime4KSharp
             int w = oldBitmap.Width - 1;
             Parallel.For(0, h, y =>
             {
+                var prevRow = y == 0 ? default : oldBitmap.GetPixelRowSpan(y - 1);
+                var middleRow = oldBitmap.GetPixelRowSpan(y);
+                var nextRow = oldBitmap.GetPixelRowSpan(y + 1);
+                Span<Color> newMiddleRow = newBitmap.GetPixelRowSpan(y);
                 for (int x = 0; x < w; x++)
                 {
                     //Default translation constants
                     int xn = -1;
                     int xp = 1;
-                    int yn = -1;
-                    int yp = 1;
+                    var yn = prevRow;
+                    var yp = nextRow;
 
                     //If x or y is on the border, don't move out of bounds
                     if (x == 0)
@@ -75,11 +78,11 @@ namespace Anime4KSharp
                     }
                     if (y == 0)
                     {
-                        yn = 0;
+                        yn = middleRow;
                     }
                     else if (y == h)
                     {
-                        yp = 0;
+                        yp = middleRow;
                     }
 
                     /*
@@ -92,19 +95,19 @@ namespace Anime4KSharp
                      */
 
                     //Top column
-                    var tl = GetPixel(oldBitmap, x + xn, y + yn);
-                    var tc = GetPixel(oldBitmap, x, y + yn);
-                    var tr = GetPixel(oldBitmap, x + xp, y + yn);
+                    var tl = GetPixel(yn, x + xn);
+                    var tc = GetPixel(yn, x);
+                    var tr = GetPixel(yn, x + xp);
 
                     //Middle column
-                    var ml = GetPixel(oldBitmap, x + xn, y);
-                    var mc = GetPixel(oldBitmap, x, y);
-                    var mr = GetPixel(oldBitmap, x + xp, y);
+                    var ml = GetPixel(middleRow, x + xn);
+                    var mc = GetPixel(middleRow, x);
+                    var mr = GetPixel(middleRow, x + xp);
 
                     //Bottom column
-                    var bl = GetPixel(oldBitmap, x + xn, y + yp);
-                    var bc = GetPixel(oldBitmap, x, y + yp);
-                    var br = GetPixel(oldBitmap, x + xp, y + yp);
+                    var bl = GetPixel(yp, x + xn);
+                    var bc = GetPixel(yp, x);
+                    var br = GetPixel(yp, x + xp);
 
                     var lightestColor = mc;
 
@@ -179,7 +182,7 @@ namespace Anime4KSharp
                             lightestColor = getLargest(mc, lightestColor, tc, ml, tl, strength);
                         }
                     }
-                    SetPixel(newBitmap, x, y, lightestColor);
+                    SetPixel(newMiddleRow, x, lightestColor);
                 }
             });
 
@@ -195,31 +198,44 @@ namespace Anime4KSharp
             int w = oldBitmap.Width - 1;
 
             // Sobel operator.
-            int[][] sobelx = {new int[] {-1, 0, 1},
-                              new int[] {-2, 0, 2},
-                              new int[] {-1, 0, 1}};
+            int[,] sobelx = { {-1, 0, 1},
+                              {-2, 0, 2},
+                              {-1, 0, 1}};
 
-            int[][] sobely = {new int[] {-1, -2, -1},
-                              new int[] { 0, 0, 0},
-                              new int[] { 1, 2, 1}};
+            int[,] sobely = { {-1, -2, -1},
+                              { 0, 0, 0},
+                              { 1, 2, 1}};
 
             // Loop over each pixel and do convolution.
-            Parallel.For(1, h, y =>
+            Parallel.For(1, h, (int y) =>
             {
+                var prevRow = oldBitmap.GetPixelRowSpan(y - 1);
+                var middleRow = oldBitmap.GetPixelRowSpan(y);
+                var nextRow = oldBitmap.GetPixelRowSpan(y + 1);
+                Span<Color> newMiddleRow = newBitmap.GetPixelRowSpan(y);
                 for (int x = 1; x < w; x++)
                 {
-                    int dx = GetPixel(oldBitmap, x - 1, y - 1).A * sobelx[0][0] + GetPixel(oldBitmap, x, y - 1).A * sobelx[0][1] + GetPixel(oldBitmap, x + 1, y - 1).A * sobelx[0][2]
-                              + GetPixel(oldBitmap, x - 1, y).A * sobelx[1][0] + GetPixel(oldBitmap, x, y).A * sobelx[1][1] + GetPixel(oldBitmap, x + 1, y).A * sobelx[1][2]
-                              + GetPixel(oldBitmap, x - 1, y + 1).A * sobelx[2][0] + GetPixel(oldBitmap, x, y + 1).A * sobelx[2][1] + GetPixel(oldBitmap, x + 1, y + 1).A * sobelx[2][2];
+                    Color pm1 = GetPixel(prevRow, x - 1);
+                    Color p0 = GetPixel(prevRow, x);
+                    Color pp1 = GetPixel(prevRow, x + 1);
+                    Color mn1 = GetPixel(middleRow, x - 1);
+                    Color m0 = GetPixel(middleRow, x);
+                    Color mp1 = GetPixel(middleRow, x + 1);
+                    Color nm1 = GetPixel(nextRow, x - 1);
+                    Color n0 = GetPixel(nextRow, x);
+                    Color np1 = GetPixel(nextRow, x + 1);
 
-                    int dy = GetPixel(oldBitmap, x - 1, y - 1).A * sobely[0][0] + GetPixel(oldBitmap, x, y - 1).A * sobely[0][1] + GetPixel(oldBitmap, x + 1, y - 1).A * sobely[0][2]
-                           + GetPixel(oldBitmap, x - 1, y).A * sobely[1][0] + GetPixel(oldBitmap, x, y).A * sobely[1][1] + GetPixel(oldBitmap, x + 1, y).A * sobely[1][2]
-                           + GetPixel(oldBitmap, x - 1, y + 1).A * sobely[2][0] + GetPixel(oldBitmap, x, y + 1).A * sobely[2][1] + GetPixel(oldBitmap, x + 1, y + 1).A * sobely[2][2];
-                    double derivata = Math.Sqrt((dx * dx) + (dy * dy));
+                    int dx = pm1.A * sobelx[0, 0] + p0.A * sobelx[0, 1] + pp1.A * sobelx[0, 2]
+                              + mn1.A * sobelx[1, 0] + m0.A * sobelx[1, 1] + mp1.A * sobelx[1, 2]
+                              + nm1.A * sobelx[2, 0] + n0.A * sobelx[2, 1] + np1.A * sobelx[2, 2];
 
-                    var pixel = GetPixel(oldBitmap, x, y);
-                    pixel.A = (byte)(derivata > 255 ? 0 : (0xFF - (int)derivata));
-                    SetPixel(newBitmap, x, y, pixel);
+                    int dy = pm1.A * sobely[0, 0] + p0.A * sobely[0, 1] + pp1.A * sobely[0, 2]
+                           + mn1.A * sobely[1, 0] + m0.A * sobely[1, 1] + mp1.A * sobely[1, 2]
+                           + nm1.A * sobely[2, 0] + n0.A * sobely[2, 1] + np1.A * sobely[2, 2];
+                    double derivata = (dx * dx) + (dy * dy);
+
+                    m0.A = (byte)(derivata > (255 * 255) ? 0 : (0xFF - (int)Math.Sqrt(derivata)));
+                    SetPixel(newMiddleRow, x, m0);
                 }
             });
 
@@ -314,15 +330,19 @@ namespace Anime4KSharp
             int h = oldBitmap.Height - 1;
             int w = oldBitmap.Width - 1;
 
-            Parallel.For(0, h, y =>
+            Parallel.For(0, h, (int y) =>
             {
+                var prevRow = y == 0 ? default : oldBitmap.GetPixelRowSpan(y - 1);
+                var middleRow = oldBitmap.GetPixelRowSpan(y);
+                var nextRow = oldBitmap.GetPixelRowSpan(y + 1);
+                Span<Color> newMiddleRow = newBitmap.GetPixelRowSpan(y);
                 for (int x = 0; x < w; x++)
                 {
                     //Default translation constants
                     int xn = -1;
                     int xp = 1;
-                    int yn = -1;
-                    int yp = 1;
+                    var yn = prevRow;
+                    var yp = nextRow;
 
                     //If x or y is on the border, don't move out of bounds
                     if (x == 0)
@@ -335,29 +355,29 @@ namespace Anime4KSharp
                     }
                     if (y == 0)
                     {
-                        yn = 0;
+                        yn = middleRow;
                     }
-                    else if (y == w)
+                    else if (y == h)
                     {
-                        yp = 0;
+                        yp = middleRow;
                     }
 
                     //Top column
-                    var tl = GetPixel(oldBitmap, x + xn, y + yn);
-                    var tc = GetPixel(oldBitmap, x, y + yn);
-                    var tr = GetPixel(oldBitmap, x + xp, y + yn);
+                    var tl = GetPixel(yn, x + xn);
+                    var tc = GetPixel(yn, x);
+                    var tr = GetPixel(yn, x + xp);
 
                     //Middle column
-                    var ml = GetPixel(oldBitmap, x + xn, y);
-                    var mc = GetPixel(oldBitmap, x, y);
-                    var mr = GetPixel(oldBitmap, x + xp, y);
+                    var ml = GetPixel(middleRow, x + xn);
+                    var mc = GetPixel(middleRow, x);
+                    var mr = GetPixel(middleRow, x + xp);
 
                     //Bottom column
-                    var bl = GetPixel(oldBitmap, x + xn, y + yp);
-                    var bc = GetPixel(oldBitmap, x, y + yp);
-                    var br = GetPixel(oldBitmap, x + xp, y + yp);
+                    var bl = GetPixel(yp, x + xn);
+                    var bc = GetPixel(yp, x);
+                    var br = GetPixel(yp, x + xp);
 
-                    var lightestColor = GetPixel(oldBitmap, x, y);
+                    var lightestColor = mc;
 
                     //Kernel 0 and 4
                     float maxDark = max3(br, bc, bl);
@@ -433,7 +453,7 @@ namespace Anime4KSharp
 
                     // Remove alpha channel (which contains our graident) that is not needed.
                     lightestColor.A = 255;// = new Color(lightestColor.R, lightestColor.G, lightestColor.B, 255);
-                    SetPixel(newBitmap, x, y, lightestColor);
+                    SetPixel(newMiddleRow, x, lightestColor);
                 }
             });
 
