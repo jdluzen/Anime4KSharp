@@ -487,27 +487,29 @@ namespace Anime4KSharp
             return Math.Max(Math.Max(a.A, b.A), c.A);
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private static Color getLargest(Color cc, Color lightestColor, Color a, Color b, Color c, int strength)
         {
-            byte ra = (byte)((cc.R * (0xFF - strength) + ((a.R + b.R + c.R) / 3) * strength) / 0xFF);
-            byte ga = (byte)((cc.G * (0xFF - strength) + ((a.G + b.G + c.G) / 3) * strength) / 0xFF);
-            byte ba = (byte)((cc.B * (0xFF - strength) + ((a.B + b.B + c.B) / 3) * strength) / 0xFF);
-            byte aa = (byte)((cc.A * (0xFF - strength) + ((a.A + b.A + c.A) / 3) * strength) / 0xFF);
-
-            var newColor = new Color(ra, ga, ba, aa);
-
-            return newColor.A > lightestColor.A ? newColor : lightestColor;
+            int inverseStrength = 0xFF - strength;
+            byte aa = (byte)((cc.A * inverseStrength + ((a.A + b.A + c.A) / 3) * strength) / 0xFF);
+            if (aa > lightestColor.A)
+            {
+                byte ra = (byte)((cc.R * inverseStrength + ((a.R + b.R + c.R) / 3) * strength) / 0xFF);
+                byte ga = (byte)((cc.G * inverseStrength + ((a.G + b.G + c.G) / 3) * strength) / 0xFF);
+                byte ba = (byte)((cc.B * inverseStrength + ((a.B + b.B + c.B) / 3) * strength) / 0xFF);
+                return new Color(ra, ga, ba, aa);
+            }
+            return lightestColor;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private static Color getAverage(Color cc, Color a, Color b, Color c, int strength)
         {
-            byte ra = (byte)((cc.R * (0xFF - strength) + ((a.R + b.R + c.R) / 3) * strength) / 0xFF);
-            byte ga = (byte)((cc.G * (0xFF - strength) + ((a.G + b.G + c.G) / 3) * strength) / 0xFF);
-            byte ba = (byte)((cc.B * (0xFF - strength) + ((a.B + b.B + c.B) / 3) * strength) / 0xFF);
-            byte aa = (byte)((cc.A * (0xFF - strength) + ((a.A + b.A + c.A) / 3) * strength) / 0xFF);
-
+            int inverseStrength = 0xFF - strength;
+            byte ra = (byte)((cc.R * inverseStrength + ((a.R + b.R + c.R) / 3) * strength) / 0xFF);
+            byte ga = (byte)((cc.G * inverseStrength + ((a.G + b.G + c.G) / 3) * strength) / 0xFF);
+            byte ba = (byte)((cc.B * inverseStrength + ((a.B + b.B + c.B) / 3) * strength) / 0xFF);
+            byte aa = (byte)((cc.A * inverseStrength + ((a.A + b.A + c.A) / 3) * strength) / 0xFF);
             return new Color(ra, ga, ba, aa);
         }
     }
